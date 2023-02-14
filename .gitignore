@@ -1,3 +1,7 @@
 # ignore all the binary files
 
 *.o
+
+# ignore client and server
+client
+server
