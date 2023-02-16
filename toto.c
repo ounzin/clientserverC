@@ -1,11 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <string.h>
+#include <ctype.h>
 
-int main()
+#include "utils.c"
+
+int main(int argc, char *argv[])
 {
-    int choice;
-    printf("Please enter your choice: ");
-    scanf("%d", &choice);
-    printf("Your choice is: %d", choice);
+    // get argument from command line
+    char *port = argv[1];
+    char *ip = argv[2];
+
+    // print size of argv
+    printf("Size of argv: %d\n", argc);
+
+    // prints the argument
+    printf("Port: %s\n", port);
+    printf("IP: %s\n", ip);
 }

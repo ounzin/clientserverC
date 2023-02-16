@@ -8,7 +8,9 @@
 #include <unistd.h>
 #include <ctype.h>
 
-void handleMessageOnClient(char *buffer, int sockfd)
+#include "utils.c"
+
+void handleMessageOnClient(unsigned char *buffer, int sockfd)
 {
     printf("Please enter the message: ");
     bzero(buffer, 1024);
@@ -19,7 +21,7 @@ void handleMessageOnClient(char *buffer, int sockfd)
     printf("%s\n", buffer);
 }
 
-void handleFactorialOnClient(char *buffer, int sockfd)
+void handleFactorialOnClient(unsigned char *buffer, int sockfd)
 {
     printf("Please enter the number: ");
     bzero(buffer, 1024);
@@ -30,25 +32,51 @@ void handleFactorialOnClient(char *buffer, int sockfd)
     printf("The factorial of the number is : %s\n", buffer);
 }
 
-void handleImageTransfertOnClient(char *buffer, int sockfd)
+char *getFileNameAndExtensionFromPath(char *p)
 {
+    char *s = p;
+    char *t = p;
+    while (*s)
+    {
+        if (*s == '/')
+        {
+            t = s + 1;
+        }
+        s++;
+    }
+    return t;
+}
+
+void handleImageTransfertOnClient(unsigned char *buffer, int sockfd)
+{
+    char *path = malloc(1024);
+    printf("Give the path of the image: ");
+    bzero(buffer, 1024);
+    path = removeWhiteSpaces(fgets(buffer, 1024, stdin));
     FILE *fp;
-    fp = fopen("cat.jpg", "rb");
+    fp = fopen(path, "rb");
     if (fp == NULL)
     {
         perror("fopen");
         exit(1);
     }
+    char *fileName = getFileNameAndExtensionFromPath(path);
+    write(sockfd, fileName, strlen(fileName));
+    int bytesRead = 0;
     printf("Sending image to server...\n");
-    while (fgets(buffer, 1024, fp) != NULL)
+    read(sockfd, buffer, 1024);
+    // print to know if the server is ready to receive the image or already have the image
+    printf("%s\n", buffer);
+    // if not send the image
+    while ((bytesRead = fread(buffer, 1, 1024, fp)) > 0)
     {
-        write(sockfd, buffer, strlen(buffer));
+        write(sockfd, buffer, bytesRead);
     }
     printf("Image sent to server.\n");
     fclose(fp);
 }
 
-void displayMenuAndChooseOperation(int newsockfd, char *buffer, int size)
+void displayMenuAndChooseOperation(int newsockfd, unsigned char *buffer, int size)
 {
     // printf menu choices
     printf("1. Send a message to the server\n");
@@ -82,22 +110,39 @@ void displayMenuAndChooseOperation(int newsockfd, char *buffer, int size)
         break;
     }
 }
-int main()
+int main(int argc, char *argv[])
 {
-    int sockfd;
-    int portno = 9002;
-    struct sockaddr_in serv_addr;
-    char buffer[1024];
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
+    if (argc < 2)
     {
-        perror("socket");
+        printf("Usage: ./client <server-ip-address> <port>\n");
         exit(1);
     }
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-    connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-    displayMenuAndChooseOperation(sockfd, buffer, 1024);
+    else
+    {
+        // get ip address and port from command line
+        char *ip = argv[1];
+        char *port = argv[2];
+
+        // start the client
+        int sockfd;
+        int portno = atoi(port);
+        struct sockaddr_in serv_addr;
+        unsigned char buffer[1024];
+
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd < 0)
+        {
+            perror("socket");
+            exit(1);
+        }
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = inet_addr(ip);
+        serv_addr.sin_port = htons(portno);
+        connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+
+        displayMenuAndChooseOperation(sockfd, buffer, 1024);
+        // handleImageTransfertOnClient(buffer, sockfd);
+        close(sockfd);
+        return 0;
+    }
 }
