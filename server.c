@@ -7,18 +7,21 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <pthread.h>
 
 #include "utils.c"
+#include "handler.h"
 
-void handleMessageOnServer(int newsockfd, unsigned char *buffer, int size)
+void handleMessageOnServer(int newsockfd, char *buffer, int size)
 {
     int n = read(newsockfd, buffer, 1023);
     printf("Here is the message: %s\n", buffer);
     write(newsockfd, "I got your message", 18);
 }
 
-void handleFactorialOnServer(int newsockfd, unsigned char *buffer, int size)
+void handleFactorialOnServer(int newsockfd, char *buffer, int size)
 {
+    printf("Calculating factorial...\n");
     int n = read(newsockfd, buffer, 1023);
     int num = atoi(buffer);
     int fact = 1;
@@ -31,13 +34,11 @@ void handleFactorialOnServer(int newsockfd, unsigned char *buffer, int size)
     write(newsockfd, factStr, strlen(factStr));
 }
 
-void handleImageTransfertOnServer(int newsockfd, unsigned char *buffer, int size)
+void handleImageTransfertOnServer(int newsockfd, char *buffer, int size)
 {
-
-    // get image from client
-
     // step 1 : get the image name
-    int n = read(newsockfd, buffer, 1023);
+    read(newsockfd, buffer, 1024);
+    printf("Image name: %s\n", buffer);
     char *imageName = buffer;
     char *basePath = "./server-assets/";
     char *destination = malloc(strlen(basePath) + strlen(imageName) + 1);
@@ -47,11 +48,9 @@ void handleImageTransfertOnServer(int newsockfd, unsigned char *buffer, int size
     {
         // file exists
         printf("File already exists.\n");
-        write(newsockfd, "File already exists.", 20);
     }
     else
     {
-        printf("File does not exist.\n");
         FILE *fp;
         fp = fopen(destination, "wb");
         if (fp == NULL)
@@ -69,7 +68,7 @@ void handleImageTransfertOnServer(int newsockfd, unsigned char *buffer, int size
     }
 }
 
-void handleMenuChoices(int newsockfd, unsigned char *buffer, int size)
+void handleMenuChoices(int newsockfd, char *buffer, int size)
 {
     int choice;
     int n = read(newsockfd, buffer, 1023);
@@ -91,15 +90,27 @@ void handleMenuChoices(int newsockfd, unsigned char *buffer, int size)
     }
 }
 
+void *handle_thread(void *arg)
+{
+
+    ThreadArgs *receivedArgs = (ThreadArgs *)arg;
+    printf("Client %s connected.\n", inet_ntoa(receivedArgs->cli_addr.sin_addr));
+    char buffer[1024];
+    bzero(buffer, 1024);
+    handleMenuChoices(receivedArgs->newsockfd, buffer, 1024);
+    pthread_exit(NULL);
+}
+
 int main(int argc, char *argv[])
 {
-    if (argc < 2)
+    if (argc < 3)
     {
         printf("Usage: %s <server-ip-address> <port>\n", argv[0]);
         exit(1);
     }
     else
     {
+        printf("Loading server...\n");
         // get ip address and port from command line
         char *ip = argv[1];
         char *port = argv[2];
@@ -107,7 +118,6 @@ int main(int argc, char *argv[])
         // start the server
         int sockfd, newsockfd, clilen, n;
         int portno = atoi(port); // 9002
-        unsigned char buffer[1024];
         struct sockaddr_in serv_addr, cli_addr;
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_addr.s_addr = inet_addr(ip);
@@ -119,15 +129,57 @@ int main(int argc, char *argv[])
             perror("socket");
             exit(1);
         }
-        bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-        listen(sockfd, 5);
-        clilen = sizeof(cli_addr);
-        newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
-        bzero(buffer, 1024);
-        handleMenuChoices(newsockfd, buffer, 1023);
-        // handleImageTransfertOnServer(newsockfd, buffer, 1024);
+        printf("Server started.\n");
+
+        if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)))
+        {
+            perror("bind");
+            exit(1);
+        }
+        else
+        {
+            listen(sockfd, 5);
+            printf("Server listening on port %d ...\n", portno);
+            // handle clients until kill signal is received
+            while (1)
+            {
+                printf("----------------------------------\n");
+                printf("\n Waiting for client...\n");
+                printf("----------------------------------\n\n");
+                clilen = sizeof(cli_addr);
+                newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, (socklen_t *)&clilen);
+                if (newsockfd < 0)
+                {
+                    perror("accept");
+                    exit(1);
+                }
+                else
+                {
+                    // create a new thread to handle the client
+                    pthread_t thread_id;
+
+                    ThreadArgs *arg = malloc(sizeof(ThreadArgs));
+                    arg->newsockfd = newsockfd;
+                    arg->cli_addr = cli_addr;
+                    int p = pthread_create(&thread_id, NULL, handle_thread, arg);
+                    if (p < 0)
+                    {
+                        perror("pthread_create");
+                        exit(1);
+                    }
+                    else
+                    {
+                        pthread_join(thread_id, NULL);
+                    }
+                    free(arg);
+                }
+            }
+        }
+
+        // close the socket
         close(newsockfd);
         close(sockfd);
+
         return 0;
     }
 }
